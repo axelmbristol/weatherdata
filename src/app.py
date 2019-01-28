@@ -1,0 +1,82 @@
+import sys
+import tables
+from datetime import datetime
+import requests
+from time import sleep
+import json
+import os
+
+
+def purge_file(filename):
+    print("purge %s..." % filename)
+    try:
+        os.remove(filename)
+    except FileNotFoundError:
+        print("file not found.")
+
+
+def get_historical_weather_data(path):
+    h5 = tables.open_file(path, "r")
+    data = h5.root.resolution_d.data
+    days = []
+    for index, x in enumerate(data):
+        # print("%d%%" % int((index/size)*100))
+        ts = int(x['timestamp'])
+        date = datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d')
+        days.append(date)
+    days_ = list(set(days))
+    days_ = sorted(days_, key=lambda n: datetime.strptime(n, '%Y-%m-%d'))
+    print(len(days_), days_)
+
+    URL = "http://api.worldweatheronline.com/premium/v1/past-weather.ashx"
+    purge_file('weather_raw.json')
+    with open('weather_raw.json', 'a') as outfile:
+        for i, date in enumerate(days_):
+            PARAMS = {'key': "b8eced29b72d43129ba154351192201", 'q': "Delmas,south+africa",
+                      'date': date, 'tp': 1, 'format': 'json'}
+            r = requests.get(url=URL, params=PARAMS)
+            data = r.json()
+            print(i, len(days_), data)
+            json.dump(data, outfile)
+            outfile.write('\n')
+            sleep(1)
+
+
+def format_time(time):
+    if len(time) == 1:
+        return '00:00'
+    if len(time) == 3:
+        return "0%s:00" % time.split('00')[0]
+    if len(time) == 4 and time != '1000' and time != '2000':
+        return "%s:00" % time.split('00')[0]
+    if time == '1000':
+        return '10:00'
+    if time == '2000':
+        return '20:00'
+
+
+def get_humidity_date(path, name):
+    data = {}
+    with open(path) as f:
+        lines = f.readlines()
+        for line in lines:
+            js = json.loads(line)
+            for w in js['data']['weather']:
+                date = w['date']
+                list = []
+                for h in w['hourly']:
+                    time = format_time(h['time'])
+                    humidity = h['humidity']
+                    temp_c = h['tempC']
+                    list.append({'time': time, 'humidity': humidity, 'temp_c': temp_c})
+                    print(date, time, temp_c, humidity)
+                data[date] = list
+        print(data)
+        with open('%s_weather.json' % name, 'a') as outfile:
+            json.dump(data, outfile)
+
+
+if __name__ == '__main__':
+    print(sys.argv)
+    # get_historical_weather_data(sys.argv[1])
+    get_humidity_date('weather_raw.json', 'Delmas')
