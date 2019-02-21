@@ -5,6 +5,7 @@ import requests
 from time import sleep
 import json
 import os
+import pymysql
 
 
 def purge_file(filename):
@@ -15,19 +16,52 @@ def purge_file(filename):
         print("file not found.")
 
 
-def get_historical_weather_data(path):
-    h5 = tables.open_file(path, "r")
-    data = h5.root.resolution_d.data
-    days = []
-    for index, x in enumerate(data):
-        # print("%d%%" % int((index/size)*100))
-        ts = int(x['timestamp'])
-        date = datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d')
-        days.append(date)
-    days_ = list(set(days))
-    days_ = sorted(days_, key=lambda n: datetime.strptime(n, '%Y-%m-%d'))
-    print(len(days_), days_)
+def connect_to_sql_database(db_server_name="localhost", db_user="axel", db_password="Mojjo@2015", db_name="south_africa_test4",
+                            char_set="utf8mb4", cusror_type=pymysql.cursors.DictCursor):
+    # print("connecting to db %s..." % db_name)
+    global sql_db
+    sql_db = pymysql.connect(host=db_server_name, user=db_user, password=db_password,
+                             db=db_name, charset=char_set, cursorclass=cusror_type)
+    return sql_db
 
+
+def execute_sql_query(query, records=None, log_enabled=True):
+    try:
+        sql_db = connect_to_sql_database()
+        cursor = sql_db.cursor()
+        if records is not None:
+            print("SQL Query: %s" % query, records)
+            cursor.executemany(query, records)
+        else:
+            if log_enabled:
+                print("SQL Query: %s" % query)
+            cursor.execute(query)
+        rows = cursor.fetchall()
+        for row in rows:
+            if log_enabled:
+                print("SQL Answer: %s" % row)
+        return rows
+    except Exception as e:
+        print("Exeception occured:{}".format(e))
+
+
+def get_historical_weather_data():
+    farm_id = "Delmas_70101200027"
+    days = execute_sql_query("SELECT DISTINCT timestamp FROM %s_resolution_d" % farm_id)
+    days_ = []
+    for item in days:
+        days_.append(datetime.utcfromtimestamp(int(item['timestamp'])).strftime('%Y-%m-%d'))
+    # h5 = tables.open_file(path, "r")
+    # data = h5.root.resolution_d.data
+    # days = []
+    # for index, x in enumerate(data):
+    #     # print("%d%%" % int((index/size)*100))
+    #     ts = int(x['timestamp'])
+    #     date = datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d')
+    #     days.append(date)
+    # days_ = list(set(days))
+    # days_ = sorted(days_, key=lambda n: datetime.strptime(n, '%Y-%m-%d'))
+    print(len(days_), days_)
     URL = "http://api.worldweatheronline.com/premium/v1/past-weather.ashx"
     purge_file('weather_raw.json')
     with open('weather_raw.json', 'a') as outfile:
@@ -78,5 +112,6 @@ def get_humidity_date(path, name):
 
 if __name__ == '__main__':
     print(sys.argv)
-    # get_historical_weather_data(sys.argv[1])
-    get_humidity_date('weather_raw.json', 'Delmas')
+    connect_to_sql_database()
+    get_historical_weather_data()
+    #get_humidity_date('weather_raw.json', 'Delmas')
